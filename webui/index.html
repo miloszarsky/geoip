@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="GeoIP Lookup - Find geographic location information for any IP address">
+    <title>GeoIP Lookup</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        /* Map-specific styles */
+        #world-map {
+            display: block;
+            width: 100%;
+            height: auto;
+            background: linear-gradient(180deg, #1e3a5f 0%, #0d253f 100%);
+            border-radius: 8px;
+        }
+        #world-map path {
+            fill: #4a9c5d;
+            stroke: #2d6b3a;
+            stroke-width: 0.3;
+            transition: fill 0.3s ease, stroke 0.3s ease;
+        }
+        #world-map path:hover {
+            fill: #5cb870;
+        }
+        #world-map path.highlighted {
+            fill: #ef4444 !important;
+            stroke: #b91c1c;
+            stroke-width: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>GeoIP Lookup</h1>
+            <p class="subtitle">Find geographic location information for any IP address</p>
+        </header>
+
+        <main>
+            <section class="lookup-section">
+                <form id="lookup-form" class="lookup-form">
+                    <div class="input-group">
+                        <input
+                            type="text"
+                            id="ip-input"
+                            name="ip"
+                            placeholder="Enter IP address (e.g., 8.8.8.8)"
+                            autocomplete="off"
+                            spellcheck="false"
+                            required
+                        >
+                        <button type="submit" id="lookup-btn">
+                            <span class="btn-text">Lookup</span>
+                            <span class="btn-loading" hidden>
+                                <span class="spinner"></span>
+                            </span>
+                        </button>
+                    </div>
+                    <div class="input-hint">
+                        Enter an IPv4 or IPv6 address. Private and reserved addresses are not supported.
+                    </div>
+                </form>
+            </section>
+
+            <section id="error-section" class="error-section" hidden>
+                <div class="error-box">
+                    <span class="error-icon">!</span>
+                    <div class="error-content">
+                        <strong class="error-title">Error</strong>
+                        <p id="error-message"></p>
+                    </div>
+                    <button class="error-close" onclick="hideError()">&times;</button>
+                </div>
+            </section>
+
+            <section id="results-section" class="results-section" hidden>
+                <h2>Lookup Results</h2>
+
+                <!-- World Map -->
+                <div id="map-container" class="map-container">
+                    <div id="map-info" class="map-info"></div>
+                    <svg id="world-map"></svg>
+                </div>
+
+                <div class="results-grid">
+                    <div class="result-card">
+                        <h3>IP Information</h3>
+                        <dl>
+                            <dt>IP Address</dt>
+                            <dd id="result-ip">-</dd>
+                            <dt>ASN</dt>
+                            <dd id="result-asn">-</dd>
+                            <dt>Organization</dt>
+                            <dd id="result-org">-</dd>
+                        </dl>
+                    </div>
+
+                    <div class="result-card">
+                        <h3>Location</h3>
+                        <dl>
+                            <dt>Country</dt>
+                            <dd id="result-country">-</dd>
+                            <dt>Region</dt>
+                            <dd id="result-region">-</dd>
+                            <dt>City</dt>
+                            <dd id="result-city">-</dd>
+                            <dt>Postal Code</dt>
+                            <dd id="result-postal">-</dd>
+                        </dl>
+                    </div>
+
+                    <div class="result-card">
+                        <h3>Geography</h3>
+                        <dl>
+                            <dt>Continent</dt>
+                            <dd id="result-continent">-</dd>
+                            <dt>Coordinates</dt>
+                            <dd id="result-coords">-</dd>
+                            <dt>Accuracy</dt>
+                            <dd id="result-accuracy">-</dd>
+                            <dt>Timezone</dt>
+                            <dd id="result-timezone">-</dd>
+                        </dl>
+                    </div>
+
+                    <div class="result-card">
+                        <h3>Additional Info</h3>
+                        <dl>
+                            <dt>European Union</dt>
+                            <dd id="result-eu">-</dd>
+                            <dt>Map Link</dt>
+                            <dd id="result-map">-</dd>
+                        </dl>
+                    </div>
+                </div>
+
+                <div class="raw-json-toggle">
+                    <button type="button" id="toggle-json-btn" class="btn-secondary">Show Raw JSON</button>
+                </div>
+
+                <div id="raw-json-section" class="raw-json-section" hidden>
+                    <h3>Raw API Response</h3>
+                    <pre id="raw-json"></pre>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p><a href="/lists/">Download IP Range Lists</a> | Powered by <a href="https://www.maxmind.com" target="_blank" rel="noopener">MaxMind GeoLite2</a> databases.</p>
+            <p class="status-line">API Status: <span id="api-status" class="status-indicator status-checking">Checking...</span></p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,138 @@
+# GeoIP Lookup System - Docker Compose Configuration
+#
+# This configuration orchestrates three services:
+# 1. geoip-updater: Downloads and updates MaxMind GeoLite2 databases
+# 2. geoip-api: FastAPI REST API for IP geolocation lookups
+# 3. geoip-webui: Nginx-based web frontend
+#
+# Usage:
+#   1. Copy .env.example to .env and configure your MaxMind credentials
+#   2. Run: docker-compose up -d
+#   3. Access the WebUI at http://localhost:8080
+#   4. API is available at http://localhost:8000
+
+services:
+  # Database Updater Service
+  # Downloads MaxMind GeoLite2 databases on a schedule
+  geoip-updater:
+    image: maxmindinc/geoipupdate:v6.1
+    container_name: geoip-updater
+    restart: unless-stopped
+    environment:
+      # MaxMind account credentials (from .env file)
+      - GEOIPUPDATE_ACCOUNT_ID=${GEOIPUPDATE_ACCOUNT_ID}
+      - GEOIPUPDATE_LICENSE_KEY=${GEOIPUPDATE_LICENSE_KEY}
+      # Database editions to download
+      - GEOIPUPDATE_EDITION_IDS=${GEOIPUPDATE_EDITION_IDS:-GeoLite2-ASN GeoLite2-City GeoLite2-Country}
+      # Update frequency in hours (0 = run once and exit)
+      - GEOIPUPDATE_FREQUENCY=${GEOIPUPDATE_FREQUENCY:-24}
+      # Verbose logging for troubleshooting
+      - GEOIPUPDATE_VERBOSE=1
+    volumes:
+      # Shared volume for database files
+      - geoip-data:/usr/share/GeoIP
+    networks:
+      - geoip-network
+    # No health check needed - this service runs and exits (or loops)
+
+  # REST API Service
+  # Provides IP geolocation lookup endpoints
+  geoip-api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    image: geoip-api:latest
+    container_name: geoip-api
+    restart: unless-stopped
+    environment:
+      # API configuration
+      - GEOIP_DATA_DIR=/geoip-data
+      - API_HOST=${API_HOST:-0.0.0.0}
+      - API_PORT=${API_PORT:-8000}
+      - API_LOG_LEVEL=${API_LOG_LEVEL:-info}
+    volumes:
+      # Mount the shared database volume (read-only for security)
+      - geoip-data:/geoip-data:ro
+    ports:
+      # Expose API port for direct access (optional, remove if only using WebUI)
+      - "8000:8000"
+    networks:
+      - geoip-network
+    depends_on:
+      - geoip-updater
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Web UI Service
+  # Nginx-based frontend for user interactions
+  geoip-webui:
+    build:
+      context: ./webui
+      dockerfile: Dockerfile
+    image: geoip-webui:latest
+    container_name: geoip-webui
+    restart: unless-stopped
+    ports:
+      # Main web interface port
+      - "${WEBUI_PORT:-8080}:80"
+    volumes:
+      # Mount IP lists for download
+      - ip-lists:/usr/share/nginx/html/lists:ro
+    networks:
+      - geoip-network
+    depends_on:
+      geoip-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/nginx-health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # IP Range List Generator Service
+  # Generates downloadable IP range lists by continent and country
+  geoip-generator:
+    build:
+      context: ./generator
+      dockerfile: Dockerfile
+    image: geoip-generator:latest
+    container_name: geoip-generator
+    restart: unless-stopped
+    environment:
+      # Database path
+      - GEOIP_DB_PATH=/geoip-data
+      # Output directory
+      - OUTPUT_PATH=/output
+      # Generation interval in seconds (86400 = 24 hours)
+      - GENERATION_INTERVAL=86400
+      # Generate files for all countries
+      - GENERATE_ALL_COUNTRIES=true
+    volumes:
+      # GeoIP database volume (read-only)
+      - geoip-data:/geoip-data:ro
+      # Output volume for generated files
+      - ip-lists:/output
+    networks:
+      - geoip-network
+    depends_on:
+      - geoip-updater
+
+# Named volumes
+volumes:
+  geoip-data:
+    driver: local
+    name: geoip-data
+  ip-lists:
+    driver: local
+    name: geoip-ip-lists
+
+# Network configuration
+networks:
+  geoip-network:
+    driver: bridge
+    name: geoip-network
