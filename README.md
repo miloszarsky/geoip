@@ -2,6 +2,9 @@
 
 A complete, containerized IP geolocation lookup system using MaxMind GeoLite2 databases. This system provides a REST API and web interface for looking up geographic information associated with IP addresses.
 
+![Alt text](screenshots/screen1.png)
+![Alt text](screenshots/screen2.png)
+
 ## System Architecture
 
 ```
