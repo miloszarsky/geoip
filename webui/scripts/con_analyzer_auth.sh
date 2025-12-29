@@ -3,13 +3,41 @@
 # Connection Analyzer with GeoIP lookup
 # Analyzes active connections on ports 80/443 and enriches with GeoIP data
 # Supports both IPv4 and IPv6 addresses
-# Usage: curl geoip.master.cz/script/con_analyzer_auth.sh | bash -
-#        curl geoip.master.cz/script/con_analyzer_auth.sh | bash -s -- 20  # Top 20
+# Usage: curl <URL>/script/con_analyzer_auth.sh | bash -
+#        curl <URL>/script/con_analyzer_auth.sh | bash -s -- 20  # Top 20
 
 set -euo pipefail
 
+# Debug: show where script fails
+trap 'echo "ERROR: Script failed at line $LINENO (command: $BASH_COMMAND)" >&2' ERR
+
+# Check required tools
+check_requirements() {
+    local missing=()
+    local tools="netstat awk curl grep cut sort uniq head"
+
+    for tool in $tools; do
+        if ! command -v "$tool" &>/dev/null; then
+            missing+=("$tool")
+        fi
+    done
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        echo "ERROR: Missing required tools: ${missing[*]}"
+        echo ""
+        echo "Install them with:"
+        echo "  Debian/Ubuntu: apt install net-tools curl gawk coreutils grep"
+        echo "  RHEL/CentOS:   yum install net-tools curl gawk coreutils grep"
+        echo "  Alpine:        apk add net-tools curl gawk coreutils grep"
+        exit 1
+    fi
+}
+
+check_requirements
+
 # Configuration
-GEOIP_API="127.0.0.1:8080/api/lookup"
+GEOIP_API="http://10.3.16.222:8080/api/lookup"
+GEOIP_NETWORK_API="http://10.3.16.222:8080/api/network"
 TOP_COUNT=${1:-10}
 OUTPUT_FILE="/tmp/raw_output.txt"
 
@@ -70,24 +98,6 @@ get_connections() {
     }'
 }
 
-# Check if IP is IPv6
-is_ipv6() {
-    [[ "$1" == *:* ]]
-}
-
-# Get IPv6 /48 prefix (for subnet grouping)
-get_ipv6_prefix() {
-    local ip=$1
-    # Extract first 3 groups (approximately /48)
-    echo "$ip" | awk -F: '{
-        if (NF >= 3) {
-            printf "%s:%s:%s", $1, $2, $3
-        } else {
-            print $0
-        }
-    }'
-}
-
 # GeoIP lookup - returns: CC,COUNTRY,ASN,ASN_NAME
 get_geoip() {
     local ip=$1
@@ -98,22 +108,38 @@ get_geoip() {
         return
     }
 
-    # Parse JSON response - extract fields
+    # Parse JSON response - extract fields (|| true to prevent exit on no match)
     local cc country asn asn_name
-    cc=$(echo "$result" | grep -o '"country_code":"[^"]*"' | cut -d'"' -f4)
-    country=$(echo "$result" | grep -o '"country_name":"[^"]*"' | cut -d'"' -f4)
-    asn=$(echo "$result" | grep -o '"asn":[0-9]*' | cut -d':' -f2)
-    asn_name=$(echo "$result" | grep -o '"asn_org":"[^"]*"' | cut -d'"' -f4)
+    cc=$(echo "$result" | grep -o '"country_code":"[^"]*"' | cut -d'"' -f4 || true)
+    country=$(echo "$result" | grep -o '"country_name":"[^"]*"' | cut -d'"' -f4 || true)
+    asn=$(echo "$result" | grep -o '"asn":[0-9]*' | cut -d':' -f2 || true)
+    asn_name=$(echo "$result" | grep -o '"asn_org":"[^"]*"' | cut -d'"' -f4 || true)
 
     echo "${cc:-},${country:-},${asn:-},${asn_name:-}"
 }
 
-# Print table with data
-print_table() {
+# Get real network/subnet for an IP - returns: NETWORK,ASN,ASN_ORG
+get_network() {
+    local ip=$1
+    local result
+
+    result=$(curl -sk --connect-timeout 3 --max-time 5 "${GEOIP_NETWORK_API}/${ip}" 2>/dev/null) || {
+        echo ",,"
+        return
+    }
+
+    local network asn asn_org
+    network=$(echo "$result" | grep -o '"network":"[^"]*"' | cut -d'"' -f4 || true)
+    asn=$(echo "$result" | grep -o '"asn":[0-9]*' | cut -d':' -f2 || true)
+    asn_org=$(echo "$result" | grep -o '"asn_org":"[^"]*"' | cut -d'"' -f4 || true)
+
+    echo "${network:-},${asn:-},${asn_org:-}"
+}
+
+# Print table for individual IPs
+print_table_ips() {
     local title=$1
     local data=$2
-    local show_subnet=${3:-false}
-    local ip_type=${4:-ipv4}
 
     [[ -z "$data" ]] && return
 
@@ -126,21 +152,8 @@ print_table() {
         [[ -z "$record" ]] && continue
 
         local count ip geoip cc country asn asn_name
-        count=$(awk '{print $1}' <<< "$record")
-
-        if [[ "$show_subnet" == "true" ]]; then
-            local sub
-            sub=$(awk '{print $2}' <<< "$record")
-            if [[ "$ip_type" == "ipv6" ]]; then
-                # Find most common IP in this /48 prefix
-                ip=$(grep "^${sub}" <<< "$connections" | sort | uniq -c | sort -rn | head -1 | awk '{print $2}')
-            else
-                # IPv4 /24 subnet
-                ip=$(grep "^${sub}\." <<< "$connections" | sort | uniq -c | sort -rn | head -1 | awk '{print $2}')
-            fi
-        else
-            ip=$(awk '{print $2}' <<< "$record")
-        fi
+        count=$(awk '{print $1}' <<< "$record" || true)
+        ip=$(awk '{print $2}' <<< "$record" || true)
 
         [[ -z "$ip" ]] && continue
 
@@ -150,6 +163,68 @@ print_table() {
         printf "%-8s %-40s %-5s %-20s %-10s %s\n" "$count" "$ip" "$cc" "$country" "$asn" "$asn_name"
         echo "${count}|${ip}|${cc}|${country}|${asn}|${asn_name}" >> "$OUTPUT_FILE"
     done <<< "$data"
+}
+
+# Print table for real subnets from API
+print_table_subnets() {
+    local title=$1
+    local conn_data=$2
+
+    [[ -z "$conn_data" ]] && return
+
+    echo -e "\n${title}"
+    echo "  (fetching real network info from API...)"
+
+    # Get unique IPs and their networks
+    declare -A network_counts      # network -> connection count
+    declare -A network_unique_ips  # network -> unique IP count
+    declare -A network_sample_ip   # network -> sample IP
+    declare -A network_asn         # network -> ASN
+    declare -A network_asn_org     # network -> ASN org
+
+    local unique_ips
+    unique_ips=$(sort -u <<< "$conn_data" || true)
+
+    while IFS= read -r ip; do
+        [[ -z "$ip" ]] && continue
+
+        # Get network info for this IP
+        local net_info network asn asn_org
+        net_info=$(get_network "$ip")
+        IFS=',' read -r network asn asn_org <<< "$net_info"
+
+        [[ -z "$network" ]] && continue
+
+        # Count connections for this IP
+        local ip_count
+        ip_count=$(grep -c "^${ip}$" <<< "$conn_data" || true)
+
+        # Update network stats
+        if [[ -z "${network_counts[$network]:-}" ]]; then
+            network_counts[$network]=0
+            network_unique_ips[$network]=0
+            network_sample_ip[$network]="$ip"
+            network_asn[$network]="$asn"
+            network_asn_org[$network]="$asn_org"
+        fi
+
+        network_counts[$network]=$((${network_counts[$network]} + ip_count))
+        network_unique_ips[$network]=$((${network_unique_ips[$network]} + 1))
+
+    done <<< "$unique_ips"
+
+    # Sort networks by connection count and display top N
+    printf "\r%-8s %-6s %-22s %-18s %-10s %s\n" "--------" "------" "----------------------" "------------------" "----------" "--------------------"
+    printf "%-8s %-6s %-22s %-18s %-10s %s\n" "CONN" "UNIQUE" "SUBNET" "SAMPLE_IP" "ASN" "ASN_NAME"
+    printf "%-8s %-6s %-22s %-18s %-10s %s\n" "--------" "------" "----------------------" "------------------" "----------" "--------------------"
+
+    # Create sorted output
+    for network in "${!network_counts[@]}"; do
+        echo "${network_counts[$network]} ${network_unique_ips[$network]} $network ${network_sample_ip[$network]} ${network_asn[$network]} ${network_asn_org[$network]}"
+    done | sort -rn | head -n "$TOP_COUNT" | while IFS=' ' read -r count unique subnet sample_ip asn asn_org; do
+        printf "%-8s %-6s %-22s %-18s %-10s %s\n" "$count" "$unique" "$subnet" "$sample_ip" "$asn" "$asn_org"
+        echo "${count}|${unique}|${subnet}|${sample_ip}|${asn}|${asn_org}" >> "$OUTPUT_FILE"
+    done
 }
 
 # Main
@@ -169,33 +244,21 @@ ipv6_connections=$(grep ':' <<< "$connections" || true)
 # === IPv4 Section ===
 if [[ -n "$ipv4_connections" ]]; then
     # TOP IPv4 IPs
-    top_ips=$(sort <<< "$ipv4_connections" | uniq -c | sort -rn | head -n "$TOP_COUNT")
-    print_table "TOP ${TOP_COUNT} IPv4 connections (port 80/443)" "$top_ips" false ipv4
+    top_ips=$(sort <<< "$ipv4_connections" | uniq -c | sort -rn | head -n "$TOP_COUNT" || true)
+    print_table_ips "TOP ${TOP_COUNT} IPv4 connections (port 80/443)" "$top_ips"
 
-    # TOP IPv4 Subnets (/24)
-    top_subnets=$(awk -F. '{print $1"."$2"."$3}' <<< "$ipv4_connections" | sort | uniq -c | sort -rn | head -n "$TOP_COUNT")
-    connections="$ipv4_connections"
-    print_table "TOP ${TOP_COUNT} IPv4 subnets /24 (port 80/443)" "$top_subnets" true ipv4
+    # TOP IPv4 Real Subnets (from API)
+    print_table_subnets "TOP ${TOP_COUNT} IPv4 subnets (real networks)" "$ipv4_connections"
 fi
 
 # === IPv6 Section ===
 if [[ -n "$ipv6_connections" ]]; then
     # TOP IPv6 IPs
-    top_ips=$(sort <<< "$ipv6_connections" | uniq -c | sort -rn | head -n "$TOP_COUNT")
-    print_table "TOP ${TOP_COUNT} IPv6 connections (port 80/443)" "$top_ips" false ipv6
+    top_ips=$(sort <<< "$ipv6_connections" | uniq -c | sort -rn | head -n "$TOP_COUNT" || true)
+    print_table_ips "TOP ${TOP_COUNT} IPv6 connections (port 80/443)" "$top_ips"
 
-    # TOP IPv6 Prefixes (/48)
-    top_prefixes=""
-    while IFS= read -r ip; do
-        get_ipv6_prefix "$ip"
-    done <<< "$ipv6_connections" | sort | uniq -c | sort -rn | head -n "$TOP_COUNT" > /tmp/ipv6_prefixes.txt
-    top_prefixes=$(cat /tmp/ipv6_prefixes.txt)
-
-    if [[ -n "$top_prefixes" ]]; then
-        connections="$ipv6_connections"
-        print_table "TOP ${TOP_COUNT} IPv6 prefixes /48 (port 80/443)" "$top_prefixes" true ipv6
-    fi
-    rm -f /tmp/ipv6_prefixes.txt
+    # TOP IPv6 Real Subnets (from API)
+    print_table_subnets "TOP ${TOP_COUNT} IPv6 subnets (real networks)" "$ipv6_connections"
 fi
 
 echo ""

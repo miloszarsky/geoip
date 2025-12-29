@@ -28,6 +28,7 @@
         worldMap: document.getElementById('world-map'),
         mapInfo: document.getElementById('map-info'),
         resultIp: document.getElementById('result-ip'),
+        resultNetwork: document.getElementById('result-network'),
         resultAsn: document.getElementById('result-asn'),
         resultOrg: document.getElementById('result-org'),
         resultCountry: document.getElementById('result-country'),
@@ -138,7 +139,18 @@
                 throw new Error(data.detail || data.error || `HTTP ${response.status}`);
             }
 
-            displayResults(data);
+            // Fetch network info in parallel (don't block on failure)
+            let networkData = null;
+            try {
+                const networkResponse = await fetch(`${CONFIG.apiBaseUrl}/network/${encodeURIComponent(ip)}`);
+                if (networkResponse.ok) {
+                    networkData = await networkResponse.json();
+                }
+            } catch (networkError) {
+                console.warn('Network info fetch failed:', networkError);
+            }
+
+            displayResults(data, networkData);
             // Update URL with query parameter
             const newUrl = `${window.location.pathname}?ip=${encodeURIComponent(ip)}`;
             window.history.replaceState({}, '', newUrl);
@@ -155,9 +167,10 @@
         }
     }
 
-    function displayResults(data) {
+    function displayResults(data, networkData) {
         // IP Information
         elements.resultIp.textContent = data.ip || '-';
+        elements.resultNetwork.textContent = networkData?.network || '-';
         elements.resultAsn.textContent = data.asn ? `AS${data.asn}` : '-';
         elements.resultOrg.textContent = data.asn_org || '-';
 

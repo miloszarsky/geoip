@@ -389,6 +389,57 @@ async def lookup_ip_query(
     return await lookup_ip(ip)
 
 
+@app.get("/network/{ip}", tags=["Network"])
+async def get_network(ip: str):
+    """
+    Get the actual network/subnet for an IP address from the ASN database.
+    Returns the network in CIDR notation along with ASN info.
+    """
+    # Validate IP address format
+    if not is_valid_ip(ip):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid IP address format: {ip}"
+        )
+
+    # Check for private/reserved IPs
+    if is_private_ip(ip):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot look up private or reserved IP address: {ip}"
+        )
+
+    # Try to load databases if not available
+    if asn_reader is None:
+        load_databases()
+
+    if asn_reader is None:
+        raise HTTPException(
+            status_code=503,
+            detail="ASN database is not available. Please try again later."
+        )
+
+    try:
+        asn_result = asn_reader.asn(ip)
+        return {
+            "ip": ip,
+            "network": str(asn_result.network),
+            "asn": asn_result.autonomous_system_number,
+            "asn_org": asn_result.autonomous_system_organization
+        }
+    except geoip2.errors.AddressNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Network information not found for IP: {ip}"
+        )
+    except Exception as e:
+        logger.error(f"Error looking up network for IP {ip}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error looking up network information: {str(e)}"
+        )
+
+
 @app.get("/", tags=["Info"])
 async def root():
     """Root endpoint with API information."""
@@ -398,6 +449,7 @@ async def root():
         "description": "REST API for IP geolocation lookups",
         "endpoints": {
             "lookup": "/lookup/{ip}",
+            "network": "/network/{ip}",
             "health": "/health",
             "reload": "/reload",
             "docs": "/docs"
