@@ -189,6 +189,31 @@ Manually trigger database reload.
 }
 ```
 
+#### GET /network/{ip}
+
+Get the actual network/subnet for an IP address from the ASN database.
+
+**Request:**
+```bash
+curl http://localhost:8000/network/8.8.8.8
+```
+
+**Response:**
+```json
+{
+  "ip": "8.8.8.8",
+  "network": "8.8.8.0/24",
+  "asn": 15169,
+  "asn_org": "GOOGLE"
+}
+```
+
+**Error Responses:**
+
+- `400 Bad Request` - Invalid IP address format or private IP
+- `404 Not Found` - Network information not found for IP
+- `503 Service Unavailable` - ASN database not available
+
 ## Troubleshooting
 
 ### Databases Not Loading
@@ -525,9 +550,9 @@ geoip_new/
 
 ## License
 
-This project uses MaxMind GeoLite2 databases, which are provided under the [GeoLite2 End User License Agreement](https://www.maxmind.com/en/geolite2/eula).
+This project is licensed under the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0).
 
-The source code in this repository is provided as-is for educational and personal use.
+This project uses MaxMind GeoLite2 databases, which are provided under the [GeoLite2 End User License Agreement](https://www.maxmind.com/en/geolite2/eula).
 
 ## Acknowledgments
 
