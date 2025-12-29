@@ -12,11 +12,18 @@ RUN rm -rf /etc/nginx/conf.d/default.conf /usr/share/nginx/html/*
 # Copy custom nginx configuration
 COPY nginx.conf /etc/nginx/nginx.conf
 
+# Copy authentication files
+COPY htpasswd /etc/nginx/htpasswd
+COPY allow_ips.conf /etc/nginx/allow_ips.conf
+
 # Copy static files
 COPY index.html /usr/share/nginx/html/
 COPY styles.css /usr/share/nginx/html/
 COPY app.js /usr/share/nginx/html/
 COPY world-map.svg /usr/share/nginx/html/
+
+# Copy scripts directory
+COPY scripts/ /usr/share/nginx/html/scripts/
 
 # Expose port
 EXPOSE 80

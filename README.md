@@ -274,6 +274,159 @@ Use these well-known IPs for testing:
 | 208.67.222.222 | United States (OpenDNS) |
 | 77.88.8.8 | Russia (Yandex) |
 
+## Authentication
+
+The WebUI is protected with basic authentication. Whitelisted IPs can access without credentials.
+
+### Default Credentials
+
+| Username | Password |
+|----------|----------|
+| `geoip` | `geoip123` |
+
+### Default Whitelisted IPs
+
+These IPs/ranges can access without authentication:
+
+| Range | Description |
+|-------|-------------|
+| `127.0.0.1`, `::1` | Localhost |
+| `10.0.0.0/8` | Private network |
+| `172.16.0.0/12` | Private network (Docker) |
+| `192.168.0.0/16` | Private network |
+
+### Adding Allowed IPs
+
+Edit `webui/allow_ips.conf` to add IPs that can bypass authentication:
+
+```bash
+# Edit the whitelist
+nano webui/allow_ips.conf
+```
+
+Add entries in nginx format:
+```nginx
+# Single IP
+allow 203.0.113.50;
+
+# CIDR range
+allow 198.51.100.0/24;
+
+# IPv6
+allow 2001:db8::/32;
+```
+
+Apply changes:
+```bash
+docker compose restart geoip-webui
+```
+
+### Changing Password
+
+Generate a new password and rebuild:
+
+```bash
+# Generate new htpasswd entry
+echo "username:$(openssl passwd -apr1 'newpassword')" > webui/htpasswd
+
+# Rebuild and deploy
+docker compose build geoip-webui
+docker compose up -d geoip-webui
+```
+
+### Public Endpoints
+
+These endpoints are accessible without authentication:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `/script/*` | Downloadable scripts |
+| `/nginx-health` | Health check |
+
+## Connection Analyzer Script
+
+A ready-to-use bash script that analyzes active server connections and enriches them with GeoIP data. Perfect for identifying top connecting IPs and their geographic origins.
+
+### Usage
+
+Run directly on any server with `curl` and `netstat`:
+
+```bash
+# Default: show top 10 IPs and subnets
+curl geoip.master.cz/script/con_analyzer_auth.sh | bash -
+
+# Custom count: show top 20
+curl geoip.master.cz/script/con_analyzer_auth.sh | bash -s -- 20
+```
+
+### Features
+
+- Analyzes active connections on ports **80** and **443**
+- Supports both **IPv4** and **IPv6** addresses
+- Groups connections by:
+  - Individual IP addresses
+  - IPv4 subnets (/24)
+  - IPv6 prefixes (/48)
+- Filters out private/local addresses automatically
+- Enriches data with country, ASN, and organization info
+
+### Example Output
+
+```
+TOP 10 IPv4 connections (port 80/443)
+-------- ---------------------------------------- ----- -------------------- ---------- --------------------
+COUNT    IP                                       CC    COUNTRY              ASN        ASN_NAME
+-------- ---------------------------------------- ----- -------------------- ---------- --------------------
+152      203.0.113.45                             US    United States        15169      GOOGLE
+89       198.51.100.23                            DE    Germany              3320       DTAG
+45       192.0.2.100                              GB    United Kingdom       5089       NTL
+
+TOP 10 IPv4 subnets /24 (port 80/443)
+-------- ---------------------------------------- ----- -------------------- ---------- --------------------
+COUNT    IP                                       CC    COUNTRY              ASN        ASN_NAME
+-------- ---------------------------------------- ----- -------------------- ---------- --------------------
+312      203.0.113.45                             US    United States        15169      GOOGLE
+156      198.51.100.23                            DE    Germany              3320       DTAG
+
+TOP 10 IPv6 connections (port 80/443)
+-------- ---------------------------------------- ----- -------------------- ---------- --------------------
+COUNT    IP                                       CC    COUNTRY              ASN        ASN_NAME
+-------- ---------------------------------------- ----- -------------------- ---------- --------------------
+23       2607:f8b0:4004:800::200e                 US    United States        15169      GOOGLE
+```
+
+### Output File
+
+Results are also saved to `/tmp/raw_output.txt` in pipe-delimited format:
+
+```
+COUNT|IP|CC|COUNTRY|ASN|ASN_NAME
+152|203.0.113.45|US|United States|15169|GOOGLE
+```
+
+### Requirements
+
+The target server needs:
+- `bash`
+- `curl`
+- `netstat` (from `net-tools` package)
+- Network access to `geoip.master.cz`
+
+### Filtered Addresses
+
+The script automatically excludes:
+
+**IPv4:**
+- `127.0.0.0/8` (loopback)
+- `10.0.0.0/8` (private)
+- `172.16.0.0/12` (private)
+- `192.168.0.0/16` (private)
+
+**IPv6:**
+- `::1` (loopback)
+- `fe80::/10` (link-local)
+- `fc00::/7` (unique local)
+
 ## Production Deployment
 
 ### Security Considerations
@@ -355,9 +508,13 @@ geoip_new/
 |-- webui/
     |-- Dockerfile          # WebUI container build
     |-- nginx.conf          # Nginx configuration
+    |-- htpasswd            # Basic auth credentials
+    |-- allow_ips.conf      # IP whitelist (editable)
     |-- index.html          # Main HTML page
     |-- styles.css          # Stylesheet
     |-- app.js              # Frontend JavaScript
+    |-- scripts/
+        |-- con_analyzer_auth.sh  # Connection analyzer script
 ```
 
 ## License

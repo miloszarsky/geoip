@@ -82,6 +82,9 @@ services:
     volumes:
       # Mount IP lists for download
       - ip-lists:/usr/share/nginx/html/lists:ro
+      # Mount allow_ips.conf for easy IP whitelist management
+      # Edit this file and restart container to update allowed IPs
+      - ./webui/allow_ips.conf:/etc/nginx/allow_ips.conf:ro
     networks:
       - geoip-network
     depends_on:
