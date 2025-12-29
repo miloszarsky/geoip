@@ -194,7 +194,25 @@ print_table_ips() {
     done <<< "$data"
 }
 
-# Print table for real subnets from API
+# Fetch network info for a single IP (used by xargs for parallel execution)
+# Output: IP,NETWORK,ASN,ASN_ORG
+fetch_network_info() {
+    local ip=$1
+    local result
+    result=$(curl -sk $CURL_AUTH --connect-timeout 3 --max-time 5 "${GEOIP_NETWORK_API}/${ip}" 2>/dev/null) || {
+        echo "${ip},,,"
+        return
+    }
+    local network asn asn_org
+    network=$(echo "$result" | grep -o '"network":"[^"]*"' | cut -d'"' -f4 || true)
+    asn=$(echo "$result" | grep -o '"asn":[0-9]*' | cut -d':' -f2 || true)
+    asn_org=$(echo "$result" | grep -o '"asn_org":"[^"]*"' | cut -d'"' -f4 || true)
+    echo "${ip},${network:-},${asn:-},${asn_org:-}"
+}
+export -f fetch_network_info
+export CURL_AUTH GEOIP_NETWORK_API
+
+# Print table for real subnets from API (parallel fetch)
 print_table_subnets() {
     local title=$1
     local conn_data=$2
@@ -211,23 +229,24 @@ print_table_subnets() {
     declare -A network_asn         # network -> ASN
     declare -A network_asn_org     # network -> ASN org
 
-    # Extract just IPs (first column) for unique list
+    # Extract unique IPs
     local unique_ips
     unique_ips=$(awk '{print $1}' <<< "$conn_data" | sort -u || true)
+    local ip_count_map
+    ip_count_map=$(awk '{print $1}' <<< "$conn_data" | sort | uniq -c || true)
 
-    while IFS= read -r ip; do
-        [[ -z "$ip" ]] && continue
+    # Fetch all network info in parallel (10 concurrent requests)
+    local network_data
+    network_data=$(echo "$unique_ips" | xargs -P 10 -I {} bash -c 'fetch_network_info "$@"' _ {} 2>/dev/null || true)
 
-        # Get network info for this IP
-        local net_info network asn asn_org
-        net_info=$(get_network "$ip")
-        IFS=',' read -r network asn asn_org <<< "$net_info"
+    # Process fetched data
+    while IFS=',' read -r ip network asn asn_org; do
+        [[ -z "$ip" || -z "$network" ]] && continue
 
-        [[ -z "$network" ]] && continue
-
-        # Count connections for this IP (match IP at start of line)
+        # Get connection count for this IP
         local ip_count
-        ip_count=$(grep -c "^${ip} " <<< "$conn_data" || true)
+        ip_count=$(awk -v ip="$ip" '$2 == ip {print $1}' <<< "$ip_count_map" || true)
+        [[ -z "$ip_count" ]] && ip_count=1
 
         # Update network stats
         if [[ -z "${network_counts[$network]:-}" ]]; then
@@ -241,7 +260,7 @@ print_table_subnets() {
         network_counts[$network]=$((${network_counts[$network]} + ip_count))
         network_unique_ips[$network]=$((${network_unique_ips[$network]} + 1))
 
-    done <<< "$unique_ips"
+    done <<< "$network_data"
 
     # Sort networks by connection count and display top N
     printf "\r%-8s %-6s %-22s %-18s %-10s %s\n" "--------" "------" "----------------------" "------------------" "----------" "--------------------"
