@@ -411,11 +411,12 @@ curl <your-geoip-server>/script/con_analyzer_auth.sh | bash -
 
 ### Environment Variables
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `GEOIP_SERVER` | Yes | GeoIP server address (e.g., `geoip.example.com:8080`) |
-| `GEOIP_USER` | No | Basic auth username |
-| `GEOIP_PASS` | No | Basic auth password |
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `GEOIP_SERVER` | Yes | - | GeoIP server address (e.g., `geoip.example.com`) |
+| `GEOIP_PROTO` | No | `https` | Protocol: `http` or `https` |
+| `GEOIP_USER` | No | - | Basic auth username |
+| `GEOIP_PASS` | No | - | Basic auth password |
 
 ### Features
 

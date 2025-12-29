@@ -5,7 +5,8 @@
 # Supports both IPv4 and IPv6 addresses
 #
 # Environment variables:
-#   GEOIP_SERVER - GeoIP server address (required, e.g., "geoip.example.com:8080")
+#   GEOIP_SERVER - GeoIP server address (required, e.g., "geoip.example.com")
+#   GEOIP_PROTO  - Protocol: http or https (default: https)
 #   GEOIP_USER   - Basic auth username (optional)
 #   GEOIP_PASS   - Basic auth password (optional)
 #
@@ -46,10 +47,11 @@ check_requirements
 # Configuration
 # Set GEOIP_SERVER environment variable or edit this line
 GEOIP_SERVER="${GEOIP_SERVER:-YOUR_GEOIP_SERVER:8080}"
+GEOIP_PROTO="${GEOIP_PROTO:-https}"  # http or https
 GEOIP_USER="${GEOIP_USER:-}"
 GEOIP_PASS="${GEOIP_PASS:-}"
-GEOIP_API="http://${GEOIP_SERVER}/api/lookup"
-GEOIP_NETWORK_API="http://${GEOIP_SERVER}/api/network"
+GEOIP_API="${GEOIP_PROTO}://${GEOIP_SERVER}/api/lookup"
+GEOIP_NETWORK_API="${GEOIP_PROTO}://${GEOIP_SERVER}/api/network"
 TOP_COUNT=${1:-10}
 
 # Build curl auth options
