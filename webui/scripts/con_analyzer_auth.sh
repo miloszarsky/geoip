@@ -3,8 +3,16 @@
 # Connection Analyzer with GeoIP lookup
 # Analyzes active connections on ports 80/443 and enriches with GeoIP data
 # Supports both IPv4 and IPv6 addresses
-# Usage: curl <URL>/script/con_analyzer_auth.sh | bash -
-#        curl <URL>/script/con_analyzer_auth.sh | bash -s -- 20  # Top 20
+#
+# Environment variables:
+#   GEOIP_SERVER - GeoIP server address (required, e.g., "geoip.example.com:8080")
+#   GEOIP_USER   - Basic auth username (optional)
+#   GEOIP_PASS   - Basic auth password (optional)
+#
+# Usage:
+#   curl <URL>/script/con_analyzer_auth.sh | GEOIP_SERVER="host:port" bash -
+#   curl <URL>/script/con_analyzer_auth.sh | GEOIP_SERVER="host:port" GEOIP_USER="user" GEOIP_PASS="pass" bash -
+#   curl <URL>/script/con_analyzer_auth.sh | GEOIP_SERVER="host:port" bash -s -- 20  # Top 20
 
 set -euo pipefail
 
@@ -38,10 +46,17 @@ check_requirements
 # Configuration
 # Set GEOIP_SERVER environment variable or edit this line
 GEOIP_SERVER="${GEOIP_SERVER:-YOUR_GEOIP_SERVER:8080}"
+GEOIP_USER="${GEOIP_USER:-}"
+GEOIP_PASS="${GEOIP_PASS:-}"
 GEOIP_API="http://${GEOIP_SERVER}/api/lookup"
 GEOIP_NETWORK_API="http://${GEOIP_SERVER}/api/network"
 TOP_COUNT=${1:-10}
-OUTPUT_FILE="/tmp/raw_output.txt"
+
+# Build curl auth options
+CURL_AUTH=""
+if [[ -n "$GEOIP_USER" && -n "$GEOIP_PASS" ]]; then
+    CURL_AUTH="-u ${GEOIP_USER}:${GEOIP_PASS}"
+fi
 
 # Get connections using netstat (IPv4 and IPv6)
 get_connections() {
@@ -105,7 +120,7 @@ get_geoip() {
     local ip=$1
     local result
 
-    result=$(curl -sk --connect-timeout 3 --max-time 5 "${GEOIP_API}/${ip}" 2>/dev/null) || {
+    result=$(curl -sk $CURL_AUTH --connect-timeout 3 --max-time 5 "${GEOIP_API}/${ip}" 2>/dev/null) || {
         echo ",,,"
         return
     }
@@ -125,7 +140,7 @@ get_network() {
     local ip=$1
     local result
 
-    result=$(curl -sk --connect-timeout 3 --max-time 5 "${GEOIP_NETWORK_API}/${ip}" 2>/dev/null) || {
+    result=$(curl -sk $CURL_AUTH --connect-timeout 3 --max-time 5 "${GEOIP_NETWORK_API}/${ip}" 2>/dev/null) || {
         echo ",,"
         return
     }
@@ -163,7 +178,6 @@ print_table_ips() {
         IFS=',' read -r cc country asn asn_name <<< "$geoip"
 
         printf "%-8s %-40s %-5s %-20s %-10s %s\n" "$count" "$ip" "$cc" "$country" "$asn" "$asn_name"
-        echo "${count}|${ip}|${cc}|${country}|${asn}|${asn_name}" >> "$OUTPUT_FILE"
     done <<< "$data"
 }
 
@@ -225,7 +239,6 @@ print_table_subnets() {
         echo "${network_counts[$network]} ${network_unique_ips[$network]} $network ${network_sample_ip[$network]} ${network_asn[$network]} ${network_asn_org[$network]}"
     done | sort -rn | head -n "$TOP_COUNT" | while IFS=' ' read -r count unique subnet sample_ip asn asn_org; do
         printf "%-8s %-6s %-22s %-18s %-10s %s\n" "$count" "$unique" "$subnet" "$sample_ip" "$asn" "$asn_org"
-        echo "${count}|${unique}|${subnet}|${sample_ip}|${asn}|${asn_org}" >> "$OUTPUT_FILE"
     done
 }
 
@@ -236,8 +249,6 @@ if [[ -z "$connections" ]]; then
     echo "No active connections on ports 80/443"
     exit 0
 fi
-
-rm -f "$OUTPUT_FILE"
 
 # Separate IPv4 and IPv6
 ipv4_connections=$(grep -v ':' <<< "$connections" || true)

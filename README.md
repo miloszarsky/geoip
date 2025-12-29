@@ -390,6 +390,33 @@ curl <your-geoip-server>/script/con_analyzer_auth.sh | bash -s -- 20
 curl <your-geoip-server>/script/con_analyzer_auth.sh | GEOIP_SERVER="geoip.example.com:8080" bash -
 ```
 
+### Basic Authentication
+
+If your GeoIP server requires authentication, set the `GEOIP_USER` and `GEOIP_PASS` environment variables:
+
+```bash
+# With basic auth credentials
+curl <your-geoip-server>/script/con_analyzer_auth.sh | \
+  GEOIP_SERVER="geoip.example.com:8080" \
+  GEOIP_USER="geoip" \
+  GEOIP_PASS="yourpassword" \
+  bash -
+
+# Or export them first
+export GEOIP_SERVER="geoip.example.com:8080"
+export GEOIP_USER="geoip"
+export GEOIP_PASS="yourpassword"
+curl <your-geoip-server>/script/con_analyzer_auth.sh | bash -
+```
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `GEOIP_SERVER` | Yes | GeoIP server address (e.g., `geoip.example.com:8080`) |
+| `GEOIP_USER` | No | Basic auth username |
+| `GEOIP_PASS` | No | Basic auth password |
+
 ### Features
 
 - Analyzes active connections on ports **80** and **443**
@@ -424,15 +451,6 @@ TOP 10 IPv6 connections (port 80/443)
 COUNT    IP                                       CC    COUNTRY              ASN        ASN_NAME
 -------- ---------------------------------------- ----- -------------------- ---------- --------------------
 23       2607:f8b0:4004:800::200e                 US    United States        15169      GOOGLE
-```
-
-### Output File
-
-Results are also saved to `/tmp/raw_output.txt` in pipe-delimited format:
-
-```
-COUNT|IP|CC|COUNTRY|ASN|ASN_NAME
-152|203.0.113.45|US|United States|15169|GOOGLE
 ```
 
 ### Requirements
