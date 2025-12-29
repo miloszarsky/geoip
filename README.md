@@ -352,11 +352,17 @@ A ready-to-use bash script that analyzes active server connections and enriches 
 Run directly on any server with `curl` and `netstat`:
 
 ```bash
+# Set your GeoIP server address
+export GEOIP_SERVER="geoip.example.com:8080"
+
 # Default: show top 10 IPs and subnets
-curl geoip.master.cz/script/con_analyzer_auth.sh | bash -
+curl <your-geoip-server>/script/con_analyzer_auth.sh | bash -
 
 # Custom count: show top 20
-curl geoip.master.cz/script/con_analyzer_auth.sh | bash -s -- 20
+curl <your-geoip-server>/script/con_analyzer_auth.sh | bash -s -- 20
+
+# One-liner with inline server config
+curl <your-geoip-server>/script/con_analyzer_auth.sh | GEOIP_SERVER="geoip.example.com:8080" bash -
 ```
 
 ### Features
@@ -410,7 +416,7 @@ The target server needs:
 - `bash`
 - `curl`
 - `netstat` (from `net-tools` package)
-- Network access to `geoip.master.cz`
+- Network access to your GeoIP server
 
 ### Filtered Addresses
 

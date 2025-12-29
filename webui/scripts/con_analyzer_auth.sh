@@ -36,8 +36,10 @@ check_requirements() {
 check_requirements
 
 # Configuration
-GEOIP_API="http://10.3.16.222:8080/api/lookup"
-GEOIP_NETWORK_API="http://10.3.16.222:8080/api/network"
+# Set GEOIP_SERVER environment variable or edit this line
+GEOIP_SERVER="${GEOIP_SERVER:-YOUR_GEOIP_SERVER:8080}"
+GEOIP_API="http://${GEOIP_SERVER}/api/lookup"
+GEOIP_NETWORK_API="http://${GEOIP_SERVER}/api/network"
 TOP_COUNT=${1:-10}
 OUTPUT_FILE="/tmp/raw_output.txt"
 
