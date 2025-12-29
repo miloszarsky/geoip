@@ -61,13 +61,23 @@ if [[ -n "$GEOIP_USER" && -n "$GEOIP_PASS" ]]; then
 fi
 
 # Get connections using netstat (IPv4 and IPv6)
+# Output format: IP DIRECTION (IN/OUT)
 get_connections() {
     netstat -tunp 2>/dev/null | awk '
     /:443|:80/ {
-        addr = $5
+        local_addr = $4
+        foreign_addr = $5
 
         # Skip if no address
-        if (addr == "" || addr == "*:*") next
+        if (foreign_addr == "" || foreign_addr == "*:*") next
+
+        # Determine direction: IN if local has :80/:443, OUT if foreign has :80/:443
+        direction = "OUT"
+        if (local_addr ~ /:443$/ || local_addr ~ /:80$/) {
+            direction = "IN"
+        }
+
+        addr = foreign_addr
 
         # Handle IPv6 addresses (format: [ipv6]:port or ipv6.port)
         if (index(addr, "[") > 0) {
@@ -113,7 +123,7 @@ get_connections() {
         # Skip empty or invalid
         if (ip == "" || ip ~ /^[0-9]+$/) next
 
-        print ip
+        print ip, direction
     }'
 }
 
@@ -163,23 +173,24 @@ print_table_ips() {
     [[ -z "$data" ]] && return
 
     echo -e "\n${title}"
-    printf "%-8s %-40s %-5s %-20s %-10s %s\n" "--------" "----------------------------------------" "-----" "--------------------" "----------" "--------------------"
-    printf "%-8s %-40s %-5s %-20s %-10s %s\n" "COUNT" "IP" "CC" "COUNTRY" "ASN" "ASN_NAME"
-    printf "%-8s %-40s %-5s %-20s %-10s %s\n" "--------" "----------------------------------------" "-----" "--------------------" "----------" "--------------------"
+    printf "%-8s %-4s %-40s %-5s %-20s %-10s %s\n" "--------" "----" "----------------------------------------" "-----" "--------------------" "----------" "--------------------"
+    printf "%-8s %-4s %-40s %-5s %-20s %-10s %s\n" "COUNT" "DIR" "IP" "CC" "COUNTRY" "ASN" "ASN_NAME"
+    printf "%-8s %-4s %-40s %-5s %-20s %-10s %s\n" "--------" "----" "----------------------------------------" "-----" "--------------------" "----------" "--------------------"
 
     while IFS= read -r record; do
         [[ -z "$record" ]] && continue
 
-        local count ip geoip cc country asn asn_name
+        local count ip dir geoip cc country asn asn_name
         count=$(awk '{print $1}' <<< "$record" || true)
         ip=$(awk '{print $2}' <<< "$record" || true)
+        dir=$(awk '{print $3}' <<< "$record" || true)
 
         [[ -z "$ip" ]] && continue
 
         geoip=$(get_geoip "$ip")
         IFS=',' read -r cc country asn asn_name <<< "$geoip"
 
-        printf "%-8s %-40s %-5s %-20s %-10s %s\n" "$count" "$ip" "$cc" "$country" "$asn" "$asn_name"
+        printf "%-8s %-4s %-40s %-5s %-20s %-10s %s\n" "$count" "$dir" "$ip" "$cc" "$country" "$asn" "$asn_name"
     done <<< "$data"
 }
 
@@ -200,8 +211,9 @@ print_table_subnets() {
     declare -A network_asn         # network -> ASN
     declare -A network_asn_org     # network -> ASN org
 
+    # Extract just IPs (first column) for unique list
     local unique_ips
-    unique_ips=$(sort -u <<< "$conn_data" || true)
+    unique_ips=$(awk '{print $1}' <<< "$conn_data" | sort -u || true)
 
     while IFS= read -r ip; do
         [[ -z "$ip" ]] && continue
@@ -213,9 +225,9 @@ print_table_subnets() {
 
         [[ -z "$network" ]] && continue
 
-        # Count connections for this IP
+        # Count connections for this IP (match IP at start of line)
         local ip_count
-        ip_count=$(grep -c "^${ip}$" <<< "$conn_data" || true)
+        ip_count=$(grep -c "^${ip} " <<< "$conn_data" || true)
 
         # Update network stats
         if [[ -z "${network_counts[$network]:-}" ]]; then

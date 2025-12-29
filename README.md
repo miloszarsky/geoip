@@ -422,10 +422,10 @@ curl <your-geoip-server>/script/con_analyzer_auth.sh | bash -
 
 - Analyzes active connections on ports **80** and **443**
 - Supports both **IPv4** and **IPv6** addresses
+- Shows connection direction (**IN** for incoming, **OUT** for outgoing)
 - Groups connections by:
   - Individual IP addresses
-  - IPv4 subnets (/24)
-  - IPv6 prefixes (/48)
+  - Real network subnets (from MaxMind ASN database)
 - Filters out private/local addresses automatically
 - Enriches data with country, ASN, and organization info
 
@@ -433,26 +433,30 @@ curl <your-geoip-server>/script/con_analyzer_auth.sh | bash -
 
 ```
 TOP 10 IPv4 connections (port 80/443)
--------- ---------------------------------------- ----- -------------------- ---------- --------------------
-COUNT    IP                                       CC    COUNTRY              ASN        ASN_NAME
--------- ---------------------------------------- ----- -------------------- ---------- --------------------
-152      203.0.113.45                             US    United States        15169      GOOGLE
-89       198.51.100.23                            DE    Germany              3320       DTAG
-45       192.0.2.100                              GB    United Kingdom       5089       NTL
+-------- ---- ---------------------------------------- ----- -------------------- ---------- --------------------
+COUNT    DIR  IP                                       CC    COUNTRY              ASN        ASN_NAME
+-------- ---- ---------------------------------------- ----- -------------------- ---------- --------------------
+152      IN   203.0.113.45                             US    United States        15169      GOOGLE
+89       IN   198.51.100.23                            DE    Germany              3320       DTAG
+45       OUT  192.0.2.100                              GB    United Kingdom       5089       NTL
 
-TOP 10 IPv4 subnets /24 (port 80/443)
--------- ---------------------------------------- ----- -------------------- ---------- --------------------
-COUNT    IP                                       CC    COUNTRY              ASN        ASN_NAME
--------- ---------------------------------------- ----- -------------------- ---------- --------------------
-312      203.0.113.45                             US    United States        15169      GOOGLE
-156      198.51.100.23                            DE    Germany              3320       DTAG
+TOP 10 IPv4 subnets (real networks)
+-------- ------ ---------------------- ------------------ ---------- --------------------
+CONN     UNIQUE SUBNET                 SAMPLE_IP          ASN        ASN_NAME
+-------- ------ ---------------------- ------------------ ---------- --------------------
+312      5      203.0.113.0/24         203.0.113.45       15169      GOOGLE
+156      3      198.51.100.0/24        198.51.100.23      3320       DTAG
 
 TOP 10 IPv6 connections (port 80/443)
--------- ---------------------------------------- ----- -------------------- ---------- --------------------
-COUNT    IP                                       CC    COUNTRY              ASN        ASN_NAME
--------- ---------------------------------------- ----- -------------------- ---------- --------------------
-23       2607:f8b0:4004:800::200e                 US    United States        15169      GOOGLE
+-------- ---- ---------------------------------------- ----- -------------------- ---------- --------------------
+COUNT    DIR  IP                                       CC    COUNTRY              ASN        ASN_NAME
+-------- ---- ---------------------------------------- ----- -------------------- ---------- --------------------
+23       IN   2607:f8b0:4004:800::200e                 US    United States        15169      GOOGLE
 ```
+
+**Direction column (DIR):**
+- `IN` - Incoming connection (client connecting to your server on port 80/443)
+- `OUT` - Outgoing connection (your server connecting to remote port 80/443)
 
 ### Requirements
 
