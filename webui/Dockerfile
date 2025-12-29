@@ -21,6 +21,7 @@ COPY index.html /usr/share/nginx/html/
 COPY styles.css /usr/share/nginx/html/
 COPY app.js /usr/share/nginx/html/
 COPY world-map.svg /usr/share/nginx/html/
+RUN chmod 644 /usr/share/nginx/html/*
 
 # Copy scripts directory
 COPY scripts/ /usr/share/nginx/html/scripts/
