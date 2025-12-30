@@ -115,9 +115,9 @@ get_connections() {
 
         # Skip private/local IPv6 addresses
         if (ip ~ /^::1$/) next           # Loopback
-        if (ip ~ /^fe80:/i) next         # Link-local
-        if (ip ~ /^fc00:/i) next         # Unique local
-        if (ip ~ /^fd[0-9a-f]{2}:/i) next # Unique local
+        if (tolower(ip) ~ /^fe80:/) next         # Link-local
+        if (tolower(ip) ~ /^fc00:/) next         # Unique local
+        if (tolower(ip) ~ /^fd[0-9a-f]{2}:/) next # Unique local
         if (ip ~ /^::$/) next            # Unspecified
 
         # Skip empty or invalid
