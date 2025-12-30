@@ -62,8 +62,10 @@ TOP_COUNT=${1:-10}
 PORTS="${PORTS:-80,443}"           # Comma-separated list of ports
 DIRECTION="${DIRECTION:-BOTH}"     # IN, OUT, or BOTH
 
-# Convert PORTS to awk regex pattern (e.g., "80,443" -> ":80|:443")
-PORT_PATTERN=$(echo "$PORTS" | sed 's/,/|:/g; s/^/:/')
+# Convert PORTS to awk regex pattern with exact matching
+# e.g., "80,443" -> ":80([^0-9]|$)|:443([^0-9]|$)"
+# This ensures :80 doesn't match :8080 or :22 doesn't match :22989
+PORT_PATTERN=$(echo "$PORTS" | sed 's/,/([^0-9]|$)|:/g; s/^/:/; s/$/([^0-9]|$)/')
 
 # Validate DIRECTION
 DIRECTION=$(echo "$DIRECTION" | tr '[:lower:]' '[:upper:]')
