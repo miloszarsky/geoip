@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Connection Analyzer with GeoIP lookup
-# Analyzes active connections on ports 80/443 and enriches with GeoIP data
+# Analyzes active connections and enriches with GeoIP data
 # Supports both IPv4 and IPv6 addresses
 #
 # Environment variables:
@@ -9,11 +9,15 @@
 #   GEOIP_PROTO  - Protocol: http or https (default: https)
 #   GEOIP_USER   - Basic auth username (optional)
 #   GEOIP_PASS   - Basic auth password (optional)
+#   PORTS        - Comma-separated ports to analyze (default: "80,443")
+#   DIRECTION    - Filter by direction: IN, OUT, or BOTH (default: BOTH)
+#   DEBUG        - Set to 1 for debug output
 #
 # Usage:
 #   curl <URL>/script/con_analyzer_auth.sh | GEOIP_SERVER="host:port" bash -
 #   curl <URL>/script/con_analyzer_auth.sh | GEOIP_SERVER="host:port" GEOIP_USER="user" GEOIP_PASS="pass" bash -
 #   curl <URL>/script/con_analyzer_auth.sh | GEOIP_SERVER="host:port" bash -s -- 20  # Top 20
+#   curl <URL>/script/con_analyzer_auth.sh | PORTS="443,8443" DIRECTION="IN" bash -  # Only incoming HTTPS
 
 set -euo pipefail
 
@@ -54,6 +58,20 @@ GEOIP_API="${GEOIP_PROTO}://${GEOIP_SERVER}/api/lookup"
 GEOIP_NETWORK_API="${GEOIP_PROTO}://${GEOIP_SERVER}/api/network"
 TOP_COUNT=${1:-10}
 
+# Port and direction filtering
+PORTS="${PORTS:-80,443}"           # Comma-separated list of ports
+DIRECTION="${DIRECTION:-BOTH}"     # IN, OUT, or BOTH
+
+# Convert PORTS to awk regex pattern (e.g., "80,443" -> ":80|:443")
+PORT_PATTERN=$(echo "$PORTS" | sed 's/,/|:/g; s/^/:/')
+
+# Validate DIRECTION
+DIRECTION=$(echo "$DIRECTION" | tr '[:lower:]' '[:upper:]')
+if [[ ! "$DIRECTION" =~ ^(IN|OUT|BOTH)$ ]]; then
+    echo "ERROR: DIRECTION must be IN, OUT, or BOTH (got: $DIRECTION)" >&2
+    exit 1
+fi
+
 # Build curl auth options
 CURL_AUTH=""
 if [[ -n "$GEOIP_USER" && -n "$GEOIP_PASS" ]]; then
@@ -63,19 +81,30 @@ fi
 # Get connections using netstat (IPv4 and IPv6)
 # Output format: IP DIRECTION (IN/OUT)
 get_connections() {
-    netstat -tunp 2>/dev/null | awk '
-    /:443|:80/ {
+    netstat -tunp 2>/dev/null | awk -v port_pattern="$PORT_PATTERN" -v dir_filter="$DIRECTION" -v ports="$PORTS" '
+    $0 ~ port_pattern {
         local_addr = $4
         foreign_addr = $5
 
         # Skip if no address
         if (foreign_addr == "" || foreign_addr == "*:*") next
 
-        # Determine direction: IN if local has :80/:443, OUT if foreign has :80/:443
+        # Build dynamic regex for local port matching (for direction detection)
+        # Convert ports "80,443" to regex ":80$|:443$"
+        n = split(ports, port_arr, ",")
+        local_port_regex = ""
+        for (i = 1; i <= n; i++) {
+            local_port_regex = local_port_regex (i > 1 ? "|" : "") ":" port_arr[i] "$"
+        }
+
+        # Determine direction: IN if local has monitored port, OUT if foreign has it
         direction = "OUT"
-        if (local_addr ~ /:443$/ || local_addr ~ /:80$/) {
+        if (match(local_addr, local_port_regex)) {
             direction = "IN"
         }
+
+        # Apply direction filter
+        if (dir_filter != "BOTH" && direction != dir_filter) next
 
         addr = foreign_addr
 
@@ -282,10 +311,13 @@ print_table_subnets() {
 }
 
 # Main
-# Debug: show raw netstat output for port 80/443
+# Debug: show raw netstat output for configured ports
 if [[ "${DEBUG:-}" == "1" ]]; then
-    echo "=== DEBUG: Raw netstat output for 80/443 ===" >&2
-    netstat -tunp 2>/dev/null | grep -E ':443|:80' >&2
+    echo "=== DEBUG: Configuration ===" >&2
+    echo "  PORTS=$PORTS  DIRECTION=$DIRECTION" >&2
+    echo "  PORT_PATTERN=$PORT_PATTERN" >&2
+    echo "=== DEBUG: Raw netstat output for ports $PORTS ===" >&2
+    netstat -tunp 2>/dev/null | grep -E "$PORT_PATTERN" >&2
     echo "=== END DEBUG ===" >&2
 fi
 
@@ -298,10 +330,15 @@ if [[ "${DEBUG:-}" == "1" ]]; then
 fi
 
 if [[ -z "$connections" ]]; then
-    echo "No active connections on ports 80/443"
+    echo "No active connections on ports $PORTS (direction: $DIRECTION)"
     echo "(Note: If connections exist but show Docker IPs like 172.x.x.x, they are filtered as private)"
     exit 0
 fi
+
+# Build title suffix based on filters
+TITLE_SUFFIX="(ports $PORTS"
+[[ "$DIRECTION" != "BOTH" ]] && TITLE_SUFFIX="$TITLE_SUFFIX, $DIRECTION only"
+TITLE_SUFFIX="$TITLE_SUFFIX)"
 
 # Separate IPv4 and IPv6
 ipv4_connections=$(grep -v ':' <<< "$connections" || true)
@@ -311,7 +348,7 @@ ipv6_connections=$(grep ':' <<< "$connections" || true)
 if [[ -n "$ipv4_connections" ]]; then
     # TOP IPv4 IPs
     top_ips=$(sort <<< "$ipv4_connections" | uniq -c | sort -rn | head -n "$TOP_COUNT" || true)
-    print_table_ips "TOP ${TOP_COUNT} IPv4 connections (port 80/443)" "$top_ips"
+    print_table_ips "TOP ${TOP_COUNT} IPv4 connections $TITLE_SUFFIX" "$top_ips"
 
     # TOP IPv4 Real Subnets (from API)
     print_table_subnets "TOP ${TOP_COUNT} IPv4 subnets (real networks)" "$ipv4_connections"
@@ -321,7 +358,7 @@ fi
 if [[ -n "$ipv6_connections" ]]; then
     # TOP IPv6 IPs
     top_ips=$(sort <<< "$ipv6_connections" | uniq -c | sort -rn | head -n "$TOP_COUNT" || true)
-    print_table_ips "TOP ${TOP_COUNT} IPv6 connections (port 80/443)" "$top_ips"
+    print_table_ips "TOP ${TOP_COUNT} IPv6 connections $TITLE_SUFFIX" "$top_ips"
 
     # TOP IPv6 Real Subnets (from API)
     print_table_subnets "TOP ${TOP_COUNT} IPv6 subnets (real networks)" "$ipv6_connections"
