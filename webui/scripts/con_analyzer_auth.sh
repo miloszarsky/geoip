@@ -98,12 +98,18 @@ get_connections() {
             sub(/\.[0-9]+$/, "", addr)
             ip = addr
         } else {
-            # Try to extract IPv6 without brackets
-            # Format: 2001:db8::1.443 or just the address
-            if (match(addr, /\.[0-9]+$/)) {
-                sub(/\.[0-9]+$/, "", addr)
+            # IPv6 without brackets - Linux netstat format: 2a00:1450:4014:800::443
+            # Remove trailing :PORT, handling ::PORT case specially
+            if (match(addr, /::[0-9]+$/)) {
+                # Port after :: (e.g., 2a00:1450:4014:800::443)
+                ip = substr(addr, 1, RSTART + 1)  # Keep the ::
+            } else if (match(addr, /:[0-9]+$/)) {
+                # Port after single : (e.g., 2a01:430:305:6::3:34956)
+                ip = substr(addr, 1, RSTART - 1)
+            } else {
+                # No port found
+                ip = addr
             }
-            ip = addr
         }
 
         # Remove ::ffff: prefix (IPv4-mapped IPv6)
