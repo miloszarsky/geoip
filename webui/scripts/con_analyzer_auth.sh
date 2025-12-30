@@ -79,7 +79,7 @@ if [[ -n "$GEOIP_USER" && -n "$GEOIP_PASS" ]]; then
 fi
 
 # Get connections using netstat (IPv4 and IPv6)
-# Output format: IP DIRECTION (IN/OUT)
+# Output format: IP DIRECTION PORT
 get_connections() {
     netstat -tunp 2>/dev/null | awk -v port_pattern="$PORT_PATTERN" -v dir_filter="$DIRECTION" -v ports="$PORTS" '
     $0 ~ port_pattern {
@@ -97,10 +97,24 @@ get_connections() {
             local_port_regex = local_port_regex (i > 1 ? "|" : "") ":" port_arr[i] "$"
         }
 
-        # Determine direction: IN if local has monitored port, OUT if foreign has it
+        # Determine direction and extract the relevant port
+        # IN: local port is the service port, OUT: foreign port is the service port
         direction = "OUT"
+        conn_port = ""
         if (match(local_addr, local_port_regex)) {
             direction = "IN"
+            # Extract local port (service port for incoming)
+            if (match(local_addr, /:[0-9]+$/)) {
+                conn_port = substr(local_addr, RSTART + 1)
+            }
+        } else {
+            # Extract foreign port (service port for outgoing)
+            if (match(foreign_addr, /:[0-9]+$/)) {
+                conn_port = substr(foreign_addr, RSTART + 1)
+            } else if (match(foreign_addr, /::[0-9]+$/)) {
+                # IPv6 with :: before port
+                conn_port = substr(foreign_addr, RSTART + 2)
+            }
         }
 
         # Apply direction filter
@@ -158,7 +172,7 @@ get_connections() {
         # Skip empty or invalid
         if (ip == "" || ip ~ /^[0-9]+$/) next
 
-        print ip, direction
+        print ip, direction, conn_port
     }'
 }
 
@@ -208,24 +222,25 @@ print_table_ips() {
     [[ -z "$data" ]] && return
 
     echo -e "\n${title}"
-    printf "%-8s %-4s %-40s %-5s %-20s %-10s %s\n" "--------" "----" "----------------------------------------" "-----" "--------------------" "----------" "--------------------"
-    printf "%-8s %-4s %-40s %-5s %-20s %-10s %s\n" "COUNT" "DIR" "IP" "CC" "COUNTRY" "ASN" "ASN_NAME"
-    printf "%-8s %-4s %-40s %-5s %-20s %-10s %s\n" "--------" "----" "----------------------------------------" "-----" "--------------------" "----------" "--------------------"
+    printf "%-8s %-4s %-5s %-40s %-5s %-20s %-10s %s\n" "--------" "----" "-----" "----------------------------------------" "-----" "--------------------" "----------" "--------------------"
+    printf "%-8s %-4s %-5s %-40s %-5s %-20s %-10s %s\n" "COUNT" "DIR" "PORT" "IP" "CC" "COUNTRY" "ASN" "ASN_NAME"
+    printf "%-8s %-4s %-5s %-40s %-5s %-20s %-10s %s\n" "--------" "----" "-----" "----------------------------------------" "-----" "--------------------" "----------" "--------------------"
 
     while IFS= read -r record; do
         [[ -z "$record" ]] && continue
 
-        local count ip dir geoip cc country asn asn_name
+        local count ip dir port geoip cc country asn asn_name
         count=$(awk '{print $1}' <<< "$record" || true)
         ip=$(awk '{print $2}' <<< "$record" || true)
         dir=$(awk '{print $3}' <<< "$record" || true)
+        port=$(awk '{print $4}' <<< "$record" || true)
 
         [[ -z "$ip" ]] && continue
 
         geoip=$(get_geoip "$ip")
         IFS=',' read -r cc country asn asn_name <<< "$geoip"
 
-        printf "%-8s %-4s %-40s %-5s %-20s %-10s %s\n" "$count" "$dir" "$ip" "$cc" "$country" "$asn" "$asn_name"
+        printf "%-8s %-4s %-5s %-40s %-5s %-20s %-10s %s\n" "$count" "$dir" "$port" "$ip" "$cc" "$country" "$asn" "$asn_name"
     done <<< "$data"
 }
 
