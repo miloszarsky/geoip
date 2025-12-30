@@ -417,7 +417,25 @@ curl <your-geoip-server>/script/con_analyzer_auth.sh | bash -
 | `GEOIP_PROTO` | No | `https` | Protocol: `http` or `https` |
 | `GEOIP_USER` | No | - | Basic auth username |
 | `GEOIP_PASS` | No | - | Basic auth password |
+| `PORTS` | No | `80,443` | Comma-separated list of ports to analyze |
+| `DIRECTION` | No | `BOTH` | Filter by direction: `IN`, `OUT`, or `BOTH` |
 | `DEBUG` | No | - | Set to `1` to enable debug output |
+
+### Filtering Examples
+
+```bash
+# Only incoming connections on default ports (80,443)
+DIRECTION="IN" GEOIP_SERVER="geoip.example.com" bash con_analyzer_auth.sh
+
+# Only outgoing HTTPS connections
+PORTS="443" DIRECTION="OUT" GEOIP_SERVER="geoip.example.com" bash con_analyzer_auth.sh
+
+# Monitor custom ports (SSH, HTTPS, and 8080)
+PORTS="22,443,8080" GEOIP_SERVER="geoip.example.com" bash con_analyzer_auth.sh
+
+# Incoming connections on non-standard HTTPS ports
+PORTS="443,8443,9443" DIRECTION="IN" GEOIP_SERVER="geoip.example.com" bash con_analyzer_auth.sh
+```
 
 ### Debugging
 
@@ -428,16 +446,18 @@ DEBUG=1 GEOIP_SERVER="geoip.example.com" bash con_analyzer_auth.sh
 ```
 
 This shows:
-- Raw netstat output for ports 80/443
+- Current configuration (PORTS, DIRECTION)
+- Raw netstat output for configured ports
 - Parsed connections after private IP filtering
 
 Useful for diagnosing why connections might not appear in the output.
 
 ### Features
 
-- Analyzes active connections on ports **80** and **443**
+- Analyzes active connections on configurable ports (default: **80** and **443**)
 - Supports both **IPv4** and **IPv6** addresses
 - Shows connection direction (**IN** for incoming, **OUT** for outgoing)
+- Filter by direction (IN only, OUT only, or BOTH)
 - Groups connections by:
   - Individual IP addresses
   - Real network subnets (from MaxMind ASN database)
