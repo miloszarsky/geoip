@@ -417,6 +417,21 @@ curl <your-geoip-server>/script/con_analyzer_auth.sh | bash -
 | `GEOIP_PROTO` | No | `https` | Protocol: `http` or `https` |
 | `GEOIP_USER` | No | - | Basic auth username |
 | `GEOIP_PASS` | No | - | Basic auth password |
+| `DEBUG` | No | - | Set to `1` to enable debug output |
+
+### Debugging
+
+Enable debug output to troubleshoot connection parsing issues:
+
+```bash
+DEBUG=1 GEOIP_SERVER="geoip.example.com" bash con_analyzer_auth.sh
+```
+
+This shows:
+- Raw netstat output for ports 80/443
+- Parsed connections after private IP filtering
+
+Useful for diagnosing why connections might not appear in the output.
 
 ### Features
 
