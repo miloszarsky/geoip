@@ -276,10 +276,24 @@ print_table_subnets() {
 }
 
 # Main
+# Debug: show raw netstat output for port 80/443
+if [[ "${DEBUG:-}" == "1" ]]; then
+    echo "=== DEBUG: Raw netstat output for 80/443 ===" >&2
+    netstat -tunp 2>/dev/null | grep -E ':443|:80' >&2
+    echo "=== END DEBUG ===" >&2
+fi
+
 connections=$(get_connections)
+
+if [[ "${DEBUG:-}" == "1" ]]; then
+    echo "=== DEBUG: Parsed connections (after filtering) ===" >&2
+    echo "$connections" >&2
+    echo "=== END DEBUG ===" >&2
+fi
 
 if [[ -z "$connections" ]]; then
     echo "No active connections on ports 80/443"
+    echo "(Note: If connections exist but show Docker IPs like 172.x.x.x, they are filtered as private)"
     exit 0
 fi
 
